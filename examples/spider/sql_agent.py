@@ -78,7 +78,7 @@ Double check the {dialect} query for common mistakes, including:
 - Casting to the correct data type
 - Using the proper columns for joins
 - Explicit query execution failures
-- Clearly unreasoable query execution results
+- Clearly unreasonable query execution results
 
 ## Table Schema ##
 
