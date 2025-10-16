@@ -1,0 +1,113 @@
+site_name: Agent Lightning
+site_url: https://microsoft.github.io/agent-lightning/
+repo_url: https://github.com/microsoft/agent-lightning
+repo_name: agent-lightning
+
+theme:
+  name: material
+  custom_dir: docs/overrides
+  logo: assets/favicon-white.svg
+  favicon: assets/favicon.svg
+  palette:
+    - scheme: default
+      primary: agl
+      accent: agl
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: agl
+      accent: agl
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.snippets
+  - admonition
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true
+  - attr_list
+
+plugins:
+  - search
+  - git-revision-date-localized:
+      enable_creation_date: true
+      type: timeago
+  - git-authors
+  - macros
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: true
+            show_root_heading: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            docstring_style: google
+  - autorefs
+  - mike:
+      version_selector: true
+      css_dir: css
+      javascript_dir: js
+      canonical_version: latest
+
+extra:
+  version:
+    provider: mike
+    default: stable
+  source_commit: !ENV [SOURCE_COMMIT, 'main']
+
+extra_javascript:
+  - https://unpkg.com/mermaid@10.6.1/dist/mermaid.min.js
+
+nav:
+  - Home: index.md
+  - Quickstart:
+    - Installation: tutorials/installation.md
+    - Train the First Agent: how-to/train-first-agent.md
+    - Write the First Algorithm: how-to/write-first-algorithm.md
+  - How-To Recipes:
+    - SFT with Unsloth: how-to/unsloth-sft.md
+    - Train SQL Agent with RL: how-to/train-sql-agent.md
+  - Learning More:
+    - Write Agents: tutorials/write-agents.md
+    - Debugging: tutorials/debug.md
+    - Parallelize: tutorials/parallelize.md
+  - Algorithm Zoo:
+    - Overview: algorithm-zoo/index.md
+    - APO: algorithm-zoo/apo.md
+    - VERL: algorithm-zoo/verl.md
+  - Deep Dive:
+    - Bird's Eye View: deep-dive/birds-eye-view.md
+    - Understanding Store: deep-dive/store.md
+    - Understanding Tracing: deep-dive/tracing.md
+  - API References:
+    - Agent: reference/agent.md
+    - Algorithm: reference/algorithm.md
+    - Command Line: reference/cli.md
+    - Instrumentation: reference/instrumentation.md
+    - Runner: reference/runner.md
+    - Store: reference/store.md
+    - Trainer: reference/trainer.md
+    - Types: reference/types.md
+
+extra_css:
+  - stylesheets/extra.css

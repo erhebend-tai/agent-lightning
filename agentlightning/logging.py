@@ -1,4 +1,8 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 import logging
+
+__all__ = ["configure_logger"]
 
 
 def configure_logger(level: int = logging.INFO, name: str = "agentlightning") -> logging.Logger:

@@ -1,22 +1,28 @@
+# Copyright (c) Microsoft. All rights reserved.
+
+"""Legacy server for the Agent Lightning framework. Deprecated in favor of agentlightning.store."""
+
+from __future__ import annotations
+
 import asyncio
 import logging
+import threading
 import time
 import uuid
-import threading
+import warnings
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Optional, Literal
+from typing import Any, Dict, List, Literal, Optional
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Path
-from pydantic import Field
 
 from .types import (
-    Rollout,
+    GenericResponse,
+    NamedResources,
+    ResourcesUpdate,
+    RolloutLegacy,
     Task,
     TaskIfAny,
-    NamedResources,
-    GenericResponse,
-    ResourcesUpdate,
 )
 
 logger = logging.getLogger(__name__)
@@ -31,7 +37,7 @@ class ServerDataStore:
     def __init__(self):
         self._task_queue: asyncio.Queue[Task] = asyncio.Queue()
         self._processing_tasks: Dict[str, Task] = {}  # Currently processing tasks
-        self._completed_rollouts: Dict[str, Rollout] = {}
+        self._completed_rollouts: Dict[str, RolloutLegacy] = {}
 
         # Store for versioned resources
         self._resource_versions: Dict[str, NamedResources] = {}
@@ -116,7 +122,7 @@ class ServerDataStore:
             return await self.get_resources_by_id(self._latest_resources_id)
         return None
 
-    async def store_rollout(self, rollout: Rollout):
+    async def store_rollout(self, rollout: RolloutLegacy):
         """
         Safely stores a completed rollout from a client.
         """
@@ -125,14 +131,14 @@ class ServerDataStore:
             self._completed_rollouts[rollout.rollout_id] = rollout
             logger.info(f"Rollout received and stored: {rollout.rollout_id}")
 
-    async def retrieve_rollout(self, rollout_id: str) -> Optional[Rollout]:
+    async def retrieve_rollout(self, rollout_id: str) -> Optional[RolloutLegacy]:
         """
         Safely retrieves a single rollout by its ID, removing it from the store.
         """
         async with self._results_lock:
             return self._completed_rollouts.pop(rollout_id, None)
 
-    async def retrieve_completed_rollouts(self) -> List[Rollout]:
+    async def retrieve_completed_rollouts(self) -> List[RolloutLegacy]:
         """
         Retrieves all completed rollouts and clears the store.
         """
@@ -171,6 +177,9 @@ class AgentLightningServer:
             port: The port to bind the server to.
             task_timeout_seconds: Time in seconds after which a claimed task is considered stale and requeued.
         """
+        warnings.warn(
+            "AgentLightningServer is deprecated. Please use LightningStoreServer instead.", DeprecationWarning
+        )
         self.host = host
         self.port = port
         self.endpoint = f"http://{host}:{port}"
@@ -216,7 +225,7 @@ class AgentLightningServer:
             return
         processing_tasks = self._store.get_processing_tasks()
 
-        for rollout_id, task in processing_tasks.items():
+        for _, task in processing_tasks.items():
             if task.last_claim_time and current_time - task.last_claim_time > self._task_timeout_seconds:
                 await self._store.requeue_task(task)
                 logger.warning(
@@ -227,7 +236,7 @@ class AgentLightningServer:
         """Setup FastAPI routes."""
 
         @self._app.get("/task", response_model=TaskIfAny)
-        async def next_task() -> TaskIfAny:
+        async def next_task() -> TaskIfAny:  # type: ignore
             """Endpoint for clients to poll for the next available task."""
             await self._check_and_requeue_stale_tasks()
 
@@ -243,7 +252,7 @@ class AgentLightningServer:
                 return TaskIfAny(is_available=False)
 
         @self._app.get("/resources/latest", response_model=ResourcesUpdate)
-        async def fetch_latest_resources() -> ResourcesUpdate:
+        async def fetch_latest_resources() -> ResourcesUpdate:  # type: ignore
             """Endpoint for clients to poll for the latest available resources."""
             if not self._store:
                 raise HTTPException(status_code=503, detail="Server not fully initialized.")
@@ -254,7 +263,7 @@ class AgentLightningServer:
             return resources_update
 
         @self._app.get("/resources/{resource_id}", response_model=ResourcesUpdate)
-        async def fetch_resources_by_id(
+        async def fetch_resources_by_id(  # type: ignore
             resource_id: str = Path(..., description="The unique identifier for the resource version.")
         ) -> ResourcesUpdate:
             """Endpoint for clients to fetch a specific version of resources."""
@@ -267,7 +276,7 @@ class AgentLightningServer:
             return resources_update
 
         @self._app.post("/rollout", response_model=GenericResponse)
-        async def post_rollout(payload: Rollout) -> GenericResponse:
+        async def post_rollout(payload: RolloutLegacy) -> GenericResponse:  # type: ignore
             """Endpoint for clients to report a completed rollout."""
             if not self._store:
                 raise HTTPException(status_code=503, detail="Server not fully initialized.")
@@ -323,7 +332,7 @@ class AgentLightningServer:
         await self._store.update_resources(update)
         return resources_id
 
-    async def get_completed_rollout(self, rollout_id: str) -> Optional[Rollout]:
+    async def get_completed_rollout(self, rollout_id: str) -> Optional[RolloutLegacy]:
         """
         Retrieves a specific completed rollout by its ID.
         """
@@ -331,7 +340,7 @@ class AgentLightningServer:
             raise RuntimeError("Store not initialized. The server may not be running.")
         return await self._store.retrieve_rollout(rollout_id)
 
-    async def poll_completed_rollout(self, rollout_id: str, timeout: Optional[float] = None) -> Optional[Rollout]:
+    async def poll_completed_rollout(self, rollout_id: str, timeout: Optional[float] = None) -> Optional[RolloutLegacy]:
         """
         Polls for a completed rollout by its ID, waiting up to `timeout` seconds.
         """
@@ -344,7 +353,7 @@ class AgentLightningServer:
                 return None
             await asyncio.sleep(1)
 
-    async def retrieve_completed_rollouts(self) -> List[Rollout]:
+    async def retrieve_completed_rollouts(self) -> List[RolloutLegacy]:
         """
         Retrieves all available completed trajectories and clears the internal store.
         """

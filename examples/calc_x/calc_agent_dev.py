@@ -1,6 +1,10 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 import os
-from agentlightning import Trainer, DevTaskLoader, LLM
+
 from calc_agent import CalcAgent
+
+from agentlightning import LLM, DevTaskLoader, Trainer
 
 
 def dev_task_loader() -> DevTaskLoader:
@@ -28,4 +32,6 @@ def dev_task_loader() -> DevTaskLoader:
 
 
 if __name__ == "__main__":
-    Trainer(n_workers=1, dev=True, max_tasks=2).fit(CalcAgent(), "http://localhost:9999/", dev_task_loader())
+    Trainer(n_workers=1, dev=True, max_tasks=2).fit_v0(
+        CalcAgent(), "http://localhost:9999/", dev_data=dev_task_loader()
+    )

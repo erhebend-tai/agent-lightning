@@ -1,4 +1,4 @@
-name: GPU Test
+name: Examples Test
 permissions:
   contents: read
 on:
@@ -10,22 +10,21 @@ on:
 
 jobs:
   examples:
-    runs-on: [self-hosted, linux, gpu]
-    timeout-minutes: 60
+    runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
+    timeout-minutes: 90
     strategy:
       matrix:
         setup: [stable, latest]
       fail-fast: false
-    container:
-      image: ghcr.io/microsoft/agent-lightning/base:latest
-      options: --gpus all --ipc=host --interactive --tty
     steps:
       - name: Check GPU status
         run: nvidia-smi
+      - name: Check disk space
+        run: df -h
       - uses: actions/checkout@v4
       - name: Create a virtual environment
         run: python3 -m venv .venv
-      - name: Install deps inside the container (${{ matrix.setup }})
+      - name: Install dependencies (${{ matrix.setup }})
         run: |
           . .venv/bin/activate
           ./scripts/setup_${{ matrix.setup }}_gpu.sh
@@ -42,6 +41,34 @@ jobs:
           name: dependencies-${{ matrix.setup }}
           path: requirements-freeze.txt
           compression-level: 0
+
+      - name: Launch LiteLLM Proxy
+        run: |
+          set -ex
+          . .venv/bin/activate
+          litellm --config scripts/litellm_ci.yaml --port 12306 &
+          sleep 10  # Wait for the proxy to be up
+        env:
+          AZURE_API_BASE: ${{ secrets.AZURE_API_BASE }}
+          AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
+
+      - name: Verify LiteLLM Proxy
+        run: |
+          set -ex
+          . .venv/bin/activate
+          python scripts/litellm_sanity_check.py
+        env:
+          OPENAI_BASE_URL: http://localhost:12306/
+          OPENAI_API_KEY: dummy
+
+      - name: Prepare Unsloth model
+        run: |
+          set -ex
+          . .venv/bin/activate
+          cd examples/unsloth
+          rm -rf models
+          hf download unsloth/Qwen3-4B-Instruct-2507 --local-dir models/version_0
+
       - name: Prepare Spider dataset
         run: |
           set -ex
@@ -58,16 +85,71 @@ jobs:
           gdown --fuzzy https://drive.google.com/file/d/1FQMyKLLd6hP9dw9rfZn1EZOWNvKaDsqw/view
           unzip calc-x-data.zip -d data
           rm calc-x-data.zip
+
+      # APO Examples test
+      - name: APO example (legacy)
+        run: |
+          set -ex
+          . .venv/bin/activate
+          cd examples/apo
+          python legacy_apo_client.py &
+          sleep 3  # Wait for the client to be up
+          python legacy_apo_server.py
+          pkill -f legacy_apo_client.py && echo "SIGTERM sent to legacy_apo_client.py" || echo "No legacy_apo_client.py process found"
+          while pgrep -f legacy_apo_client.py; do
+            echo "Waiting for legacy_apo_client.py to finish..."
+            sleep 5
+          done
+          echo "legacy_apo_client.py has finished."
+          sleep 10
+        env:
+          OPENAI_API_BASE: http://localhost:12306/
+          OPENAI_API_KEY: dummy
+      - name: APO example
+        run: |
+          set -ex
+          . .venv/bin/activate
+          cd examples/apo
+          python apo_custom_algorithm_trainer.py | tee _ci_apo.log
+          # Check whether the log contains "Best prompt found:"
+          grep "Best prompt found:" _ci_apo.log
+        env:
+          # New versions follow OPENAI_BASE_URL instead of OPENAI_API_BASE
+          OPENAI_BASE_URL: http://localhost:12306/
+          OPENAI_API_KEY: dummy
+      - name: APO example debug sanity check
+        run: |
+          set -ex
+          . .venv/bin/activate
+          cd examples/apo
+          python apo_debug.py --mode runner
+          python apo_debug.py --mode trainer
+        env:
+          # New versions follow OPENAI_BASE_URL instead of OPENAI_API_BASE
+          OPENAI_BASE_URL: http://localhost:12306/
+          OPENAI_API_KEY: dummy
+
+      - name: APO built-in algorithm
+        run: |
+          set -ex
+          . .venv/bin/activate
+          cd examples/apo
+          python room_selector_apo.py
+        env:
+          OPENAI_BASE_URL: http://localhost:12306/
+          OPENAI_API_KEY: dummy
+        if: success() || failure()
+
       - name: Spider sanity check
         run: |
           set -ex
           . .venv/bin/activate
           cd examples/spider
-          python sql_agent.py --trainer.n-workers 1 --trainer.dev true --trainer.max-tasks 2
+          python sql_agent.py
         env:
-          VERL_API_BASE: http://localhost:9999/
-          OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_BASE: http://localhost:12306/
+          OPENAI_API_KEY: dummy
+        if: success() || failure()
       - name: Calc-X MCP sanity check
         run: |
           set -ex
@@ -75,8 +157,8 @@ jobs:
           cd examples/calc_x
           python tests/test_mcp_calculator.py
         env:
-          OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_BASE: http://localhost:12306/
+          OPENAI_API_KEY: dummy
       - name: Calc-X sanity check
         run: |
           set -ex
@@ -84,14 +166,14 @@ jobs:
           cd examples/calc_x
           python calc_agent_dev.py
         env:
-          OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_BASE: http://localhost:12306/
+          OPENAI_API_KEY: dummy
 
       # Calc-X training suddenly works after running the sanity check.
       # And it has to be run before Spider training.
       # The client side used to hang in many of my attempts.
       # Don't ask why. Don't touch this.
-      - name: Calc-X training
+      - name: Calc-X training v0.1
         run: |
           set -ex
           source .venv/bin/activate
@@ -109,8 +191,10 @@ jobs:
           sleep 10
         shell: bash
         env:
-          WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
         id: calc_x_train
+        if: success() || failure()
 
       - name: Validate Calc-X training
         run: |
@@ -118,7 +202,40 @@ jobs:
           . .venv/bin/activate
           python scripts/validate_example_wandb.py ${{ steps.calc_x_train.outputs.project_name }} ${{ steps.calc_x_train.outputs.run_name }}
         env:
-          WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+
+      - name: Calc-X training v0.2
+        run: |
+          set -ex
+          source .venv/bin/activate
+          cd examples/calc_x
+          ../../scripts/restart_ray.sh
+          sleep 5
+          PYTHONUNBUFFERED=1 python calc_agent_v0_2.py
+          sleep 10
+        shell: bash
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+        id: calc_x_train_v0_2
+        if: success() || failure()
+
+      - name: Calc-X training v0.2 LLM Proxy
+        run: |
+          set -ex
+          source .venv/bin/activate
+          cd examples/calc_x
+          ../../scripts/restart_ray.sh
+          sleep 5
+          PYTHONUNBUFFERED=1 python calc_agent_v0_2_llm_proxy.py
+          sleep 10
+        shell: bash
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+        id: calc_x_train_v0_2_llm_proxy
+        if: success() || failure()
 
       - name: Spider training
         run: |
@@ -127,19 +244,12 @@ jobs:
           cd examples/spider
           ../../scripts/restart_ray.sh
           sleep 5
-          PYTHONUNBUFFERED=1 python sql_agent.py --trainer.n-workers 10 &
-          bash train_ci.sh
-          pkill -f sql_agent.py && echo "SIGTERM sent to sql_agent.py" || echo "No sql_agent.py process found"
-          while pgrep -f sql_agent.py; do
-            echo "Waiting for sql_agent.py to finish..."
-            sleep 5
-          done
-          echo "sql_agent.py has finished."
+          PYTHONUNBUFFERED=1 python train_sql_agent.py fast
           sleep 10
         shell: bash
         env:
-          VERL_API_BASE: http://localhost:9991/
-          WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
         id: spider_train
         if: success() || failure()
 
@@ -149,8 +259,63 @@ jobs:
           . .venv/bin/activate
           python scripts/validate_example_wandb.py ${{ steps.spider_train.outputs.project_name }} ${{ steps.spider_train.outputs.run_name }}
         env:
-          WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
 
+      # Unsloth Examples test
+      - name: Unsloth SFT example
+        run: |
+          set -ex
+          . .venv/bin/activate
+          cd examples/unsloth
+
+          agl store --port 4747 &
+          sleep 5
+          python sft_rollout_runners.py &
+          sleep 5
+          python sft_algorithm.py
+
+          pkill -f agl && echo "SIGTERM sent to agl" || echo "No agl process found"
+          while pgrep -f agl; do
+            echo "Waiting for agl to finish..."
+            sleep 5
+          done
+          pkill -f sft_rollout_runners.py && echo "SIGTERM sent to sft_rollout_runners.py" || echo "No sft_rollout_runners.py process found"
+          while pgrep -f sft_rollout_runners.py; do
+            echo "Waiting for sft_rollout_runners.py to finish..."
+            sleep 5
+          done
+          echo "sft_rollout_runners.py has finished."
+          sleep 10
+
+          # Check models/version_2 must exist
+          if [ ! -d "models/version_2" ]; then
+            echo "models/version_2 does not exist"
+            exit 1
+          fi
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+        if: ${{ (success() || failure()) && matrix.setup == 'latest' }}
+
+      - name: Unsloth SFT example all-in-one
+        run: |
+          set -ex
+          . .venv/bin/activate
+          cd examples/unsloth
+          rm -rf models/version_1 models/version_2
+
+          python sft_allinone.py
+          if [ ! -d "models/version_2" ]; then
+            echo "models/version_2 does not exist"
+            exit 1
+          fi
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+        if: matrix.setup == 'latest'
+
+      # Cleanup
       - name: Cleanup
         run: ./scripts/cleanup.sh
         if: success() || failure()

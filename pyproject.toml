@@ -1,7 +1,7 @@
 [project]
 name = "agentlightning"
-version = "0.1"
-description = "Agent Lightning"
+version = "0.2.0"
+description = "Agent Lightning is the absolute trainer to light up AI agents."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -9,11 +9,22 @@ dependencies = [
   "psutil",
   "setproctitle",
   "flask",
-  "agentops<=0.4.18",
+  "agentops<=0.4.21",
   "httpdbg",
   "uvicorn",
   "fastapi",
+  "aiohttp",
+  "opentelemetry-api>=1.35",
+  "opentelemetry-sdk>=1.35",
+  "opentelemetry-exporter-otlp>=1.35",
+  "litellm[proxy]",
+  "pydantic>=2.11",
+  "openai",
+  "rich",
 ]
+
+[project.scripts]
+agl = "agentlightning.cli:main"
 
 [project.optional-dependencies]
 dev = [
@@ -24,14 +35,24 @@ dev = [
   "pre-commit",
   "pytest-rerunfailures",
   "black",
+  "isort",
+  "pyright",
+  "mkdocs",
+  "mkdocs-material",
+  "mkdocstrings[python]",
+  "mike",
+  "mkdocs-git-revision-date-localized-plugin",
+  "mkdocs-git-authors-plugin",
+  "mkdocs-macros-plugin",
+  "mkdocs-autorefs",
 ]
 experiment = [
   "random-word",
+  "gdown",
 ]
 agent = [
   "autogen-agentchat",
   "autogen-ext[openai]",
-  "litellm[proxy]",
   "mcp",
   "openai-agents",
   "langgraph",
@@ -41,6 +62,28 @@ agent = [
   "sqlparse",
   "nltk",
   "uv",
+  "anthropic",
+]
+apo = [
+  "poml",
+]
+
+# This is used for type checking.
+# Generally, we do not recommend using install .[verl] to install those dependencies.
+trl = [
+  # https://github.com/unslothai/unsloth/issues/3451
+  "unsloth<=2025.10.1",
+  "unsloth_zoo<=2025.10.1",
+  "bitsandbytes",
+  "peft",
+  "datasets",
+  "transformers",
+  "trl",
+  "kernels",
+]
+verl = [
+  "verl==0.5.0",
+  "vllm>=0.8.4,<0.11.0",
 ]
 
 [build-system]
@@ -49,7 +92,26 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["agentlightning"]
-include = ["**/*.yaml", "**/*.yml"]
+include = ["**/*.yaml", "**/*.yml", "**/*.poml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.black]
+line-length = 120
+target-version = ['py312']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  _version\.py
+)
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 120
+known_first_party = ["agentlightning"]
+extend_skip_glob = [
+  "data/**",
+  "_version.py",
+]
