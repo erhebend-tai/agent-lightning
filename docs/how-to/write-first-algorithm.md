@@ -15,6 +15,8 @@ Before diving into the [LightningStore][agentlightning.LightningStore], let's de
 
 ### Resources: The Tunable Assets
 
+[](){ #introduction-to-resources }
+
 **Resources** are the assets your algorithm is trying to improve. Think of them as the "recipe" an agent uses to perform its task. This recipe can be:
 
   * A **prompt template** that guides an LLM.
@@ -164,7 +166,7 @@ To see everything in action, you'll need three separate terminal windows.
 
 !!! tip
 
-    If you want to follow along, you can find the complete code for this example in the [apo_custom_algorithm.py]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/apo/apo_custom_algorithm.py) file.
+    If you want to follow along, you can find the complete code for this example in the [apo_custom_algorithm.py]({{ src("examples/apo/apo_custom_algorithm.py") }}) file.
 
 **1. Start the Store:**
 In the first terminal, start the LightningStore server. This component will wait for connections from the algorithm and the runner. The store will be listening on port `4747` ⚡ by default.
@@ -274,4 +276,4 @@ The store terminal shows a detailed log of every interaction, confirming its rol
 
     In this tutorial, however, our goal is to *build a new algorithm*. To do that, we need to interact directly with the core components: the [Store][agentlightning.LightningStore], the [Runner][agentlightning.Runner], and the algorithm logic itself. Running them separately gives you more control and clearer, isolated logs, which is ideal for development and debugging.
 
-    Once your custom algorithm is mature, you can package it to comply with our standard interface ([@algo][agentlightning.algo] or [Algorithm][agentlightning.Algorithm]). This allows you to use it with the [Trainer][agentlightning.Trainer] again, getting all the benefits of automated lifecycle management while using your own custom logic. A sample code doing this is available in [apo_custom_algorithm_trainer.py]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/apo/apo_custom_algorithm_trainer.py).
+    Once your custom algorithm is mature, you can package it to comply with our standard interface ([@algo][agentlightning.algo] or [Algorithm][agentlightning.Algorithm]). This allows you to use it with the [Trainer][agentlightning.Trainer] again, getting all the benefits of automated lifecycle management while using your own custom logic. A sample code doing this is available in [apo_custom_algorithm_trainer.py]({{ src("examples/apo/apo_custom_algorithm_trainer.py") }}).

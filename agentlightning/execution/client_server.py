@@ -19,45 +19,44 @@ logger = logging.getLogger(__name__)
 
 
 class ClientServerExecutionStrategy(ExecutionStrategy):
-    """Run algorithm (server) and runners (clients) as separate processes over HTTP.
+    """Run algorithm and runner bundles as separate processes over HTTP.
 
-    **Execution Roles:**
+    Execution Roles:
 
-    - "algorithm": Start the HTTP server (`LightningStoreServer`) in-process and run the
-      algorithm bundle against it.
-    - "runner": Connect to an already running server via `LightningStoreClient` and
-      execute runner bundles (optionally in multiple processes).
-    - "both": Spawn the runner processes first, then launch the algorithm/server
-      bundle on the main process. This mode orchestrates the full loop locally.
+    - `"algorithm"`: Start [`LightningStoreServer`][agentlightning.LightningStoreServer]
+      in-process and execute the algorithm bundle against it.
+    - `"runner"`: Connect to an existing server with
+      [`LightningStoreClient`][agentlightning.LightningStoreClient] and run the
+      runner bundle locally (spawning multiple processes when requested).
+    - `"both"`: Spawn runner processes first, then execute the algorithm and
+      server on the same machine. This mode orchestrates the full loop locally.
 
-    When role == "both", you may choose which side runs on the main process via
-    `main_process` (debug helper). Running the runner bundle on the main process
-    is only supported with `n_runners == 1`.
+    When `role == "both"` you may choose which side runs on the main process
+    via `main_process`. The runner-on-main option is limited to
+    `n_runners == 1` because each additional runner requires its own event
+    loop and process.
 
-    Important: When `main_process == "runner"`, the algorithm runs in a subprocess
-    with the LightningStore server. This means any state modifications made during
-    execution remain in that subprocess and are NOT reflected in the original store
-    object passed to `execute()`. The main process runner accesses the store only
-    through the HTTP client interface.
+    !!! warning
+        When `main_process == "runner"` the algorithm and HTTP server execute
+        in a child process. Store mutations remain isolated inside that process,
+        so the original store instance passed to
+        [execute()][agentlightning.ExecutionStrategy.execute] is not updated.
 
-    **Abort / Stop Model (four-step escalation):**
+    Abort Model (four-step escalation):
 
-    1. Cooperative stop:
-       A shared :class:`~agentlightning.execution.events.MultiprocessingEvent`
-       (`stop_evt`) is passed to *all* bundles. Bundles should check it to exit.
-       Any crash (algorithm or runner) sets `stop_evt` so the other side can
-       stop cooperatively. Ctrl+C on the main process also flips the event.
-    2. KeyboardInterrupt synth:
-       Remaining subprocesses receive `SIGINT` to trigger `KeyboardInterrupt`
-       handlers.
-    3. Termination:
-       Stubborn subprocesses get `terminate()` (SIGTERM on POSIX).
-    4. Kill:
-        As a last resort we call `kill()` (SIGKILL on POSIX).
+    1. Cooperative stop. Every bundle receives a shared
+       [`MultiprocessingEvent`][agentlightning.MultiprocessingEvent] (`stop_evt`).
+       Any failure flips the event so peers can exit cleanly. Ctrl+C on the main
+       process also sets the flag.
+    2. KeyboardInterrupt synthesis. Remaining subprocesses receive ``SIGINT`` to
+       trigger `KeyboardInterrupt` handlers.
+    3. Termination. Stubborn processes are asked to ``terminate()``
+       (`SIGTERM` on POSIX).
+    4. Kill. As a last resort `kill()` is invoked (`SIGKILL` on POSIX).
 
-    Notes:
-        This mirrors the semantics implemented in :mod:`shared_memory`, but adapted
-        to multiple processes and the HTTP client/server boundary.
+    This mirrors the semantics implemented in
+    [`SharedMemoryExecutionStrategy`][agentlightning.SharedMemoryExecutionStrategy]
+    but adapts them to multiple processes and the HTTP client/server boundary.
     """
 
     alias: str = "cs"
@@ -77,12 +76,12 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
 
         Args:
             role: Which side(s) to run in this process. When omitted, the
-                :envvar:`AGL_CURRENT_ROLE` environment variable is used.
+                `AGL_CURRENT_ROLE` environment variable is used.
             server_host: Interface the HTTP server binds to when running the
-                algorithm bundle locally. Defaults to :envvar:`AGL_SERVER_HOST`
-                or ``"localhost"`` if unset.
+                algorithm bundle locally. Defaults to `AGL_SERVER_HOST`
+                or `"localhost"` if unset.
             server_port: Port for the HTTP server in "algorithm"/"both" modes.
-                Defaults to :envvar:`AGL_SERVER_PORT` or ``4747`` if unset.
+                Defaults to `AGL_SERVER_PORT` or `4747` if unset.
             n_runners: Number of runner processes to spawn in "runner"/"both".
             graceful_timeout: How long to wait (seconds) after setting the stop
                 event before escalating to signals.
@@ -91,18 +90,20 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
             main_process: Which bundle runs on the main process when
                 `role == "both"`. `"runner"` requires `n_runners == 1` and is
                 primarily intended for debugging.
-            managed_store: When ``True`` (default) the strategy constructs
+            managed_store: When `True` (default) the strategy constructs
                 LightningStore client/server wrappers automatically. When
-                ``False`` the provided ``store`` is passed directly to the
+                `False` the provided `store` is passed directly to the
                 bundles, allowing callers to manage store wrappers manually.
         """
         if role is None:
             role_env = os.getenv("AGL_CURRENT_ROLE")
             if role_env is None:
-                raise ValueError("role must be provided via argument or AGL_CURRENT_ROLE env var")
-            if role_env not in ("algorithm", "runner", "both"):
+                # Use both if not specified via env var or argument
+                role = "both"
+            elif role_env not in ("algorithm", "runner", "both"):
                 raise ValueError("role must be one of 'algorithm', 'runner', or 'both'")
-            role = role_env
+            else:
+                role = role_env
 
         if server_host is None:
             server_host = os.getenv("AGL_SERVER_HOST", "localhost")
@@ -173,16 +174,13 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         self,
         runner: RunnerBundle,
         worker_id: int,
+        store: LightningStore,
         stop_evt: ExecutionEvent,
-        *,
-        store: LightningStore | None = None,
     ) -> None:
-        client_store: LightningStore | None
         if self.managed_store:
+            # If managed, we actually do not use the provided store
             client_store = LightningStoreClient(f"http://{self.server_host}:{self.server_port}")
         else:
-            if store is None:
-                raise ValueError("Runner store must be provided when managed_store is False")
             client_store = store
         try:
             if self.managed_store:
@@ -211,25 +209,23 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
     def _spawn_runners(
         self,
         runner: RunnerBundle,
+        store: LightningStore,
         stop_evt: ExecutionEvent,
         *,
         ctx: BaseContext,
-        store: LightningStore | None = None,
     ) -> list[multiprocessing.Process]:
         """Used when `role == "runner"` or `role == "both"` and `n_runners > 1`."""
         processes: list[multiprocessing.Process] = []
 
-        def _runner_sync(
-            runner: RunnerBundle, worker_id: int, stop_evt: ExecutionEvent, store: LightningStore | None
-        ) -> None:
+        def _runner_sync(runner: RunnerBundle, worker_id: int, store: LightningStore, stop_evt: ExecutionEvent) -> None:
             # Runners are executed in child processes; each process owns its own
             # event loop to keep the asyncio scheduler isolated.
-            asyncio.run(self._execute_runner(runner, worker_id, stop_evt, store=store))
+            asyncio.run(self._execute_runner(runner, worker_id, store, stop_evt))
 
         for i in range(self.n_runners):
             process = cast(
                 multiprocessing.Process,
-                ctx.Process(target=_runner_sync, args=(runner, i, stop_evt, store), name=f"runner-{i}"),  # type: ignore
+                ctx.Process(target=_runner_sync, args=(runner, i, store, stop_evt), name=f"runner-{i}"),  # type: ignore
             )
             process.start()
             logger.debug("Spawned runner process %s (pid=%s)", process.name, process.pid)
@@ -373,10 +369,10 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
             elif self.role == "runner":
                 if self.n_runners == 1:
                     logger.info("Running runner solely...")
-                    asyncio.run(self._execute_runner(runner, 0, stop_evt))
+                    asyncio.run(self._execute_runner(runner, 0, store, stop_evt))
                 else:
                     logger.info("Spawning runner processes...")
-                    processes = self._spawn_runners(runner, stop_evt, ctx=ctx)
+                    processes = self._spawn_runners(runner, store, stop_evt, ctx=ctx)
                     # Wait for the processes to finish naturally.
                     for process in processes:
                         process.join()
@@ -384,7 +380,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
             elif self.role == "both":
                 if self.main_process == "algorithm":
                     logger.info("Spawning runner processes...")
-                    processes = self._spawn_runners(runner, stop_evt, ctx=ctx)
+                    processes = self._spawn_runners(runner, store, stop_evt, ctx=ctx)
                     try:
                         logger.info("Running algorithm...")
                         asyncio.run(self._execute_algorithm(algorithm, store, stop_evt))
@@ -405,7 +401,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                     # the background process spawned above (the provided
                     # store must therefore be picklable when using spawn).
                     logger.info("Running runner...")
-                    asyncio.run(self._execute_runner(runner, 0, stop_evt))
+                    asyncio.run(self._execute_runner(runner, 0, store, stop_evt))
 
                     # Wait for the algorithm process to finish.
                     algorithm_process.join()

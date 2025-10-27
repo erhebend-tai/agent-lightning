@@ -19,9 +19,11 @@
 
 ## Adapter
 
+::: agentlightning.Adapter
+
 ::: agentlightning.TraceAdapter
 
-::: agentlightning.Adapter
+::: agentlightning.OtelTraceAdapter
 
 ::: agentlightning.TraceToTripletBase
 
@@ -34,9 +36,3 @@
 ## LLM Proxy
 
 ::: agentlightning.LLMProxy
-
-::: agentlightning.llm_proxy.ModelConfig
-
-::: agentlightning.llm_proxy.LightningSpanExporter
-
-::: agentlightning.llm_proxy.AddReturnTokenIds

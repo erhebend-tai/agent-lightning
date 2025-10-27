@@ -2,8 +2,8 @@
 
 import asyncio
 import random
-from contextlib import contextmanager
-from typing import Any, Dict, Iterator, List, Optional, Sequence, cast
+from contextlib import asynccontextmanager
+from typing import Any, AsyncGenerator, Dict, List, Optional, Sequence, cast
 
 import pytest
 from opentelemetry import trace as trace_api
@@ -22,7 +22,11 @@ from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.base import Tracer
 from agentlightning.types import LLM, Hook, NamedResources, PromptTemplate, Rollout, Span, SpanNames
 
-trace_api.set_tracer_provider(TracerProvider())
+
+@pytest.fixture(scope="module", autouse=True)
+def setup_module():
+    trace_api.set_tracer_provider(TracerProvider())
+    yield
 
 
 def create_readable_span(name: str, attributes: Optional[Dict[str, Any]] = None) -> ReadableSpan:
@@ -79,15 +83,15 @@ class DummyTracer(Tracer):
     def get_last_trace(self) -> List[ReadableSpan]:
         return list(self._last_trace)
 
-    @contextmanager
-    def trace_context(
+    @asynccontextmanager
+    async def trace_context(
         self,
         name: Optional[str] = None,
         *,
         store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
-    ) -> Iterator[List[ReadableSpan]]:
+    ) -> AsyncGenerator[List[ReadableSpan], None]:
         previous = self._contexts[-1] if self._contexts else None
         current = {
             "name": name,

@@ -6,8 +6,8 @@ import asyncio
 import logging
 import os
 import threading
-from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Awaitable, Iterator, List, Optional
+from contextlib import asynccontextmanager, contextmanager
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, Iterator, List, Optional
 
 import agentops
 import agentops.sdk.core
@@ -153,15 +153,15 @@ class AgentOpsTracer(Tracer):
             self.uninstrument(worker_id)
             logger.info(f"[Worker {worker_id}] Instrumentation removed.")
 
-    @contextmanager
-    def trace_context(
+    @asynccontextmanager
+    async def trace_context(
         self,
         name: Optional[str] = None,
         *,
         store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
-    ) -> Iterator[LightningSpanProcessor]:
+    ) -> AsyncGenerator[LightningSpanProcessor, None]:
         """
         Starts a new tracing context. This should be used as a context manager.
 
@@ -172,8 +172,23 @@ class AgentOpsTracer(Tracer):
             attempt_id: Optional attempt ID to add the spans to.
 
         Yields:
-            The LightningSpanProcessor instance to collect spans.
+            The [`LightningSpanProcessor`][agentlightning.tracer.agentops.LightningSpanProcessor] instance to collect spans.
         """
+        with self._trace_context_sync(
+            name=name, store=store, rollout_id=rollout_id, attempt_id=attempt_id
+        ) as processor:
+            yield processor
+
+    @contextmanager
+    def _trace_context_sync(
+        self,
+        name: Optional[str] = None,
+        *,
+        store: Optional[LightningStore] = None,
+        rollout_id: Optional[str] = None,
+        attempt_id: Optional[str] = None,
+    ) -> Iterator[LightningSpanProcessor]:
+        """Implementation of `trace_context` for synchronous execution."""
         if not self._lightning_span_processor:
             raise RuntimeError("LightningSpanProcessor is not initialized. Call init_worker() first.")
 
@@ -226,6 +241,10 @@ class AgentOpsTracer(Tracer):
 
 
 class LightningSpanProcessor(SpanProcessor):
+    """Span processor that subclasses OpenTelemetry's `SpanProcessor` and adds support to dump traces
+    to a [`LightningStore`][agentlightning.LightningStore].
+    """
+
     def __init__(self):
         self._spans: List[ReadableSpan] = []
 

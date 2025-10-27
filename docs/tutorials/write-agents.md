@@ -16,7 +16,7 @@ In practice, please also bear in mind that tasks, resources, and spans have extr
 
 This tutorial will show you how to write an agent that can handle various tasks and resources and emit all kinds of spans. However, you should understand that agents and algorithms are often co-designed. Supporting new types of resources or spans in an algorithm is often much more complex than just adding them to an agent.
 
-## `@rollout` Decorator
+## [`@rollout`][agentlightning.rollout] Decorator
 
 The simplest way to create an agent is by writing a standard Python function and marking it with the [@rollout][agentlightning.rollout] decorator. This approach is perfect for agents with straightforward logic that doesn't require complex state management.
 
@@ -115,7 +115,7 @@ The value your agent function returns (i.e., the return value of the function de
 
 !!! important "Emitting the Final Reward"
 
-    When returning `None`, you must still ensure a final reward is logged. You can do this by using the [`emit_reward`][agentlightning.emit_reward] function (covered in the Emitter section below) or by wrapping your reward calculation function with the [`@reward`][agentlightning.reward.reward] decorator.
+    When returning `None`, you must still ensure a final reward is logged. You can do this by using the [`emit_reward`][agentlightning.emit_reward] function (covered in the [Emitter section][using-emitter] below) or by wrapping your reward calculation function with the [`@reward`][agentlightning.reward.reward] decorator.
 
 * **`list[ReadableSpan]`** or **`list[Span]`**: For advanced use cases, you can manually construct and return a complete list of all spans for the rollout. This gives you full control over the trace data. You can return either a list of OpenTelemetry `ReadableSpan` objects or Agent-lightning's native `Span` objects.
 
@@ -127,7 +127,11 @@ For more complex agents that require state, helper methods, or distinct logic fo
 
 To create a class-based agent, you subclass [agentlightning.LitAgent][] and implement its `rollout` method.
 
-Here's how the `room_selector` could be implemented as a class. The rollout method has a slightly different signature than the function-based agent, mainly in how it handles the resources. Algorithms send [NamedResources][agentlightning.NamedResources] (which is a mapping from resource key to [Resource][agentlightning.Resource]) to agent. With [`@rollout`][agentlightning.rollout] decorator, the resource with correctly matched type will be automatically injected into the rollout method. However, when you use a class-based agent, you need to manually access the resource from the `resources` dictionary. Built-in algorithms listed their resource key naming conventions [here](../algorithm-zoo/index.md).
+[](){ #introduction-to-named-resources }
+
+Here's how the `room_selector` could be implemented as a class. The rollout method has a slightly different signature than the function-based agent, mainly in how it handles the resources. Putting it simply, algorithms do not just send a [PromptTemplate][agentlightning.PromptTemplate] to the agents, they instead send [NamedResources][agentlightning.NamedResources], which is a mapping from resource key to [Resource][agentlightning.Resource]. This design is to allow for more advanced features like multi-resource tuning.
+
+With [`@rollout`][agentlightning.rollout] decorator, the resource with correctly matched type will be automatically injected into the rollout method. However, when you use a class-based agent, you need to manually access the resource from the `resources` dictionary. Built-in algorithms listed their resource key naming conventions [here](../algorithm-zoo/index.md).
 
 ```python
 import agentlightning as agl
@@ -201,9 +205,11 @@ The `LitAgent` class provides several methods you can override for more fine-gra
 
 ## Using the Emitter
 
+[](){ #using-emitter }
+
 While returning a single float for the final reward is sufficient for many algorithms, some advanced scenarios require richer feedback. For instance, an algorithm might learn more effectively if it receives intermediate rewards throughout a multi-step task.
 
-Agent-lightning provides an **emitter** module that allows you to record custom spans from within your agent's logic. Remember, the [Tracer][agentlightning.Tracer] automatically instruments many common operations (like LLM calls), but the emitter is for your own, domain-specific events.
+Agent-lightning provides an **emitter** module that allows you to record custom spans from within your agent's logic. Like many common operations (like LLM calls) that are automatically instrumented by [Tracer][agentlightning.Tracer], the emitter will also send a [Span][agentlightning.Span] that records an Agent-lightning-specific operation. Then algorithms can query and read those spans later. See [Working with Traces](./traces.md) for more details.
 
 You can find the emitter functions from [agentlightning.emitter](../reference/agent.md).
 

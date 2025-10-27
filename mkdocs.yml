@@ -1,4 +1,4 @@
-site_name: Agent Lightning
+site_name: Agent-lightning
 site_url: https://microsoft.github.io/agent-lightning/
 repo_url: https://github.com/microsoft/agent-lightning
 repo_name: agent-lightning
@@ -42,6 +42,10 @@ markdown_extensions:
   - pymdownx.details
   - pymdownx.tabbed:
       alternate_style: true
+  - pymdownx.arithmatex:
+      generic: true
+      inline_syntax: ["round"]
+      block_syntax: ["block"]
   - toc:
       permalink: true
   - attr_list
@@ -52,16 +56,19 @@ plugins:
       enable_creation_date: true
       type: timeago
   - git-authors
-  - macros
+  - macros:
+      module_name: docs/macros/source_links
   - mkdocstrings:
       handlers:
         python:
           options:
-            show_source: true
+            show_source: false
             show_root_heading: true
             show_symbol_type_heading: true
             show_symbol_type_toc: true
+            docstring_section_style: list
             docstring_style: google
+            heading_level: 3
   - autorefs
   - mike:
       version_selector: true
@@ -77,6 +84,12 @@ extra:
 
 extra_javascript:
   - https://unpkg.com/mermaid@10.6.1/dist/mermaid.min.js
+  - https://unpkg.com/chart.js@4.5.1/dist/chart.umd.min.js
+  - https://unpkg.com/katex@0/dist/katex.min.js
+  - https://unpkg.com/katex@0/dist/contrib/auto-render.min.js
+  - javascripts/charts.js
+  - javascripts/move-source-file.js
+  - javascripts/katex.js
 
 nav:
   - Home: index.md
@@ -90,6 +103,7 @@ nav:
   - Learning More:
     - Write Agents: tutorials/write-agents.md
     - Debugging: tutorials/debug.md
+    - Working with Traces: tutorials/traces.md
     - Parallelize: tutorials/parallelize.md
   - Algorithm Zoo:
     - Overview: algorithm-zoo/index.md
@@ -98,7 +112,7 @@ nav:
   - Deep Dive:
     - Bird's Eye View: deep-dive/birds-eye-view.md
     - Understanding Store: deep-dive/store.md
-    - Understanding Tracing: deep-dive/tracing.md
+    - Serving LLM: deep-dive/serving-llm.md
   - API References:
     - Agent: reference/agent.md
     - Algorithm: reference/algorithm.md
@@ -108,6 +122,8 @@ nav:
     - Store: reference/store.md
     - Trainer: reference/trainer.md
     - Types: reference/types.md
+    - Internal: reference/internal.md
 
 extra_css:
+  - https://unpkg.com/katex@0/dist/katex.min.css
   - stylesheets/extra.css
